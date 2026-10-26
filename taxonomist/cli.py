@@ -55,6 +55,10 @@ def main(argv=None) -> int:
     pr.add_argument("action", choices=["list", "accept", "apply"])
     pr.add_argument("id", type=int, nargs="?")
 
+    ag = sub.add_parser("agent")
+    ag.add_argument("--turns", type=int, default=30)
+    ag.add_argument("--run-dir", default="tmp/agent_runs")
+
     rs = sub.add_parser("restore")
     rs.add_argument("snapshot", type=int)
 
@@ -113,6 +117,10 @@ def main(argv=None) -> int:
         else:
             from .evolve import apply
             print(apply(store, _load(args), args.taxonomy, args.id))
+    elif args.cmd == "agent":
+        from .agent import agent
+        print(asyncio.run(agent(store, _load(args), turns=args.turns,
+                                run_dir=args.run_dir)))
     elif args.cmd == "restore":
         print("restored rows:", store.restore(args.snapshot))
     return 0
