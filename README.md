@@ -10,6 +10,8 @@ bundled SQLite store).
 
 - **tag** — fill missing tags at any level; `none` is a real answer
 - **audit** — proactive verdict sampling (ok / wrong / weak / data_quality)
+- **agent** — bounded curator session: model-driven tool loop for judgment
+  calls (calibrated tag checks, canonical-only writes, node proposals)
 - **evolve** — no-fit residue → clusters → node proposals → apply → tree grows
 - **coverage / tree / observations / proposals / restore** — reporting + rollback
 
@@ -26,6 +28,7 @@ taxonomist tag --level l3 --batch 1000          # decisions-first sweep
 taxonomist observations --propose               # residue → node proposals
 taxonomist proposals list; proposals accept 3; proposals apply 3
 taxonomist audit -n 200                         # verdict sample
+ taxonomist agent --turns 30                        # curator session
 ```
 
 ## The two brains
