@@ -1,48 +1,15 @@
-"""DocStore — the only integration surface a host implements. Docs out
-{id, title, text, meta}, tags in; snapshots make every write reversible.
-
-Ships SqliteStore so `taxonomist` works out of the box on a JSONL ingest.
-Hosts with their own DB implement the same five methods."""
+"""Bundled default adapter — taxonomy.db in the project directory."""
 from __future__ import annotations
 
 import json
 import sqlite3
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator, Protocol
+
+from ..model import Doc, Observation, Proposal, Store, Tag, TagWrite
 
 
-@dataclass
-class Doc:
-    id: str
-    title: str = ""
-    text: str = ""
-    meta: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class TagWrite:
-    doc_id: str
-    level: str               # 'l1' | 'l2' | 'l3'
-    value: str
-    confidence: float = 1.0
-
-
-class DocStore(Protocol):
-    def docs(self, *, missing_level: str | None = None,
-             limit: int | None = None) -> Iterator[Doc]: ...
-    def tags(self, doc_id: str) -> dict[str, str]: ...
-    def write_tags(self, items: list[TagWrite],
-                   provenance: str) -> int: ...   # returns snapshot id
-    def observe(self, doc_id: str, level: str, parent: str,
-                suggested_id: str, rationale: str) -> None: ...
-    def observations(self) -> list[dict[str, Any]]: ...
-
-
-class SqliteStore:
-    """Self-contained store: taxonomy.db in the project directory."""
-
+class SqliteStore(Store):
     def __init__(self, path: str | Path = "taxonomy.db"):
         self.conn = sqlite3.connect(str(path))
         self.conn.executescript("""
@@ -63,7 +30,6 @@ class SqliteStore:
                 sample_docs TEXT, created_at REAL);
         """)
 
-    # -- ingest / read -----------------------------------------------------
     def add_docs(self, docs: list[Doc]) -> int:
         self.conn.executemany(
             "INSERT OR REPLACE INTO docs VALUES (?,?,?,?)",
@@ -71,10 +37,8 @@ class SqliteStore:
         self.conn.commit()
         return len(docs)
 
-    def docs(self, *, missing_level: str | None = None,
-             limit: int | None = None) -> Iterator[Doc]:
-        q = "SELECT id, title, text, meta FROM docs"
-        args: list[Any] = []
+    def docs(self, *, missing_level=None, limit=None):
+        q, args = "SELECT id, title, text, meta FROM docs", []
         if missing_level:
             q += " WHERE id NOT IN (SELECT doc_id FROM tags WHERE level=?)"
             args.append(missing_level)
@@ -88,11 +52,6 @@ class SqliteStore:
         return {lv: v for lv, v in self.conn.execute(
             "SELECT level, value FROM tags WHERE doc_id=?", (doc_id,))}
 
-    def doc_ids_missing(self, level: str) -> list[str]:
-        return [r[0] for r in self.conn.execute(
-            "SELECT id FROM docs WHERE id NOT IN "
-            "(SELECT doc_id FROM tags WHERE level=?)", (level,))]
-
     def coverage(self) -> dict[str, int]:
         total = self.conn.execute("SELECT COUNT(*) FROM docs").fetchone()[0]
         out = {"total": total}
@@ -102,21 +61,18 @@ class SqliteStore:
                 (lv,)).fetchone()[0]
         return out
 
-    # -- writes ------------------------------------------------------------
     def write_tags(self, items: list[TagWrite], provenance: str) -> int:
-        """Delete-then-insert per (doc,level); snapshot old rows first."""
         cur = self.conn.execute(
             "INSERT INTO snapshots(created_at, provenance, rows_json) "
             "VALUES (?,?,'')", (time.time(), provenance))
         snap_id = cur.lastrowid
         keys = {(i.doc_id, i.level) for i in items}
-        old = [dict(zip(("doc_id", "level", "value", "confidence", "source"), r))
-               for did, lv in keys
+        old = [Tag(*r) for did, lv in keys
                for r in self.conn.execute(
                    "SELECT doc_id,level,value,confidence,source FROM tags "
                    "WHERE doc_id=? AND level=?", (did, lv))]
         self.conn.execute("UPDATE snapshots SET rows_json=? WHERE id=?",
-                          (json.dumps(old), snap_id))
+                          (json.dumps([t.__dict__ for t in old]), snap_id))
         with self.conn:
             for did, lv in keys:
                 self.conn.execute(
@@ -140,34 +96,34 @@ class SqliteStore:
                      r["confidence"], r["source"]))
         return len(rows)
 
-    # -- evolution ---------------------------------------------------------
-    def observe(self, doc_id, level, parent, suggested_id, rationale) -> None:
+    def observe(self, obs: Observation) -> None:
         with self.conn:
             self.conn.execute(
                 "INSERT INTO observations VALUES (?,?,?,?,?,?)",
-                (doc_id, level, parent, suggested_id, rationale, time.time()))
+                (obs.doc_id, obs.level, obs.parent, obs.suggested_id,
+                 obs.rationale, time.time()))
 
-    def observations(self) -> list[dict[str, Any]]:
-        return [dict(zip(("doc_id", "level", "parent", "suggested_id",
-                          "rationale", "created_at"), r))
-                for r in self.conn.execute(
-                    "SELECT * FROM observations ORDER BY created_at")]
+    def observations(self) -> list[Observation]:
+        return [Observation(*r[:5]) for r in self.conn.execute(
+            "SELECT doc_id,level,parent,suggested_id,rationale "
+            "FROM observations ORDER BY created_at")]
 
-    def add_proposal(self, parent_path, node_id, label, rationale,
-                     sample_docs) -> int:
+    def add_proposal(self, p: Proposal) -> int:
         with self.conn:
             cur = self.conn.execute(
                 "INSERT INTO proposals(status,parent_path,node_id,label,"
-                "rationale,sample_docs,created_at) VALUES('pending',?,?,?,?,?,?)",
-                (parent_path, node_id, label, rationale,
-                 json.dumps(sample_docs), time.time()))
+                "rationale,sample_docs,created_at) VALUES(?,?,?,?,?,?,?)",
+                (p.status, p.parent_path, p.node_id, p.label, p.rationale,
+                 json.dumps(p.sample_docs), time.time()))
             return cur.lastrowid
 
-    def proposals(self, status="pending") -> list[dict[str, Any]]:
-        return [dict(zip(("id", "status", "parent_path", "node_id", "label",
-                          "rationale", "sample_docs", "created_at"), r))
+    def proposals(self, status="pending") -> list[Proposal]:
+        return [Proposal(id=r[0], status=r[1], parent_path=r[2],
+                         node_id=r[3], label=r[4] or "", rationale=r[5] or "",
+                         sample_docs=json.loads(r[6] or "[]"))
                 for r in self.conn.execute(
-                    "SELECT * FROM proposals WHERE status=? ORDER BY id",
+                    "SELECT id,status,parent_path,node_id,label,rationale,"
+                    "sample_docs FROM proposals WHERE status=? ORDER BY id",
                     (status,))]
 
     def set_proposal(self, pid: int, status: str) -> None:

@@ -40,15 +40,27 @@ taxonomist audit -n 200                         # verdict sample
 
 ## Bring your own store
 
-```python
-from taxonomist import DocStore, Doc, TagWrite
+The internal model is storage-agnostic — `Doc`, `Tag`, `Observation`,
+`Proposal`. Everything persistence-shaped is an **adapter**:
 
-class MyStore:   # implement five methods against your schema
+```python
+from taxonomist import Store, Doc, TagWrite
+from taxonomist.adapters import MemoryStore, SqliteStore
+
+class PgStore(Store):            # your backend: implement ~8 methods
     def docs(self, *, missing_level=None, limit=None): ...
     def tags(self, doc_id): ...
-    def write_tags(self, items, provenance): ...   # snapshot internally
-    def observe(self, ...): ...
+    def write_tags(self, items, provenance): ...  # snapshot internally
+    def restore(self, snapshot_id): ...
+    def observe(self, obs): ...
     def observations(self): ...
+    def add_proposal(self, p): ...
+    def proposals(self, status="pending"): ...
+    def set_proposal(self, pid, status): ...
 ```
+
+Bundled adapters: `SqliteStore` (default, `taxonomy.db` in your project
+dir) and `MemoryStore` (tests/dev — also the minimal adapter example).
+No postgres dependency anywhere in the package.
 
 Every write is snapshotted; `taxonomist restore <snapshot_id>` rolls back.

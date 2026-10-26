@@ -19,7 +19,7 @@ from typing import Any
 import httpx
 
 from . import models
-from .store import DocStore, TagWrite
+from .model import Observation, Store, TagWrite
 from .taxonomy import Taxonomy
 
 _SUGGEST_PROMPT = """This document did not fit any existing {level} category under {parent}.
@@ -96,7 +96,7 @@ async def _classify_doc(doc, tax: Taxonomy, client, sem, stats) -> dict:
 
 
 async def classify(
-    store: DocStore,
+    store: Store,
     tax: Taxonomy,
     *,
     level: str = "l3",
@@ -149,9 +149,11 @@ async def classify(
                             sug = json.loads(m.group(0)) if m else {}
                             sid = sug.get("suggested_id")
                             if sid and re.fullmatch(r"[a-z0-9_]{3,60}", sid):
-                                store.observe(d.id, level,
-                                              str(d.meta.get("l2", "")),
-                                              sid, sug.get("label", ""))
+                                store.observe(Observation(
+                                    doc_id=d.id, level=level,
+                                    parent=str(d.meta.get("l2", "")),
+                                    suggested_id=sid,
+                                    rationale=sug.get("label", "")))
                                 obs += 1
                         except Exception:
                             pass

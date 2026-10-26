@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 from . import models
-from .store import DocStore
+from .model import Store
 from .taxonomy import Taxonomy
 
 _VERDICTS = {"ok": "Tag fits well", "wrong": "A different existing tag fits",
@@ -54,7 +54,7 @@ async def _audit(doc, tax: Taxonomy, client, sem) -> dict[str, Any]:
                     "confidence": 0.0, "err": str(e)[:120]}
 
 
-async def audit(store: DocStore, tax: Taxonomy, *,
+async def audit(store: Store, tax: Taxonomy, *,
                 n: int = 200, strategy: str = "random",
                 concurrency: int = 32) -> list[dict[str, Any]]:
     """Sample n docs and verdict each. Strategies: random, low_confidence

@@ -27,7 +27,7 @@ from typing import Any
 import httpx
 
 from . import models, settings
-from .store import DocStore, TagWrite
+from .model import Proposal, Store, TagWrite
 from .taxonomy import Taxonomy
 
 _SYSTEM = """You are a taxonomy curator. Work the scoped queue: read docs, tag
@@ -83,7 +83,7 @@ _TOOLS = [
 ]
 
 
-def _run(store: DocStore, tax: Taxonomy, name: str, args: dict,
+def _run(store: Store, tax: Taxonomy, name: str, args: dict,
          client: httpx.AsyncClient, sem: asyncio.Semaphore,
          docs_by_id: dict) -> Any:
     if name == "coverage":
@@ -110,9 +110,11 @@ def _run(store: DocStore, tax: Taxonomy, name: str, args: dict,
                                  for i in ok], "agent") if ok else None
         return {"written": len(ok), "rejected": bad, "snapshot": snap}
     if name == "propose":
-        pid = store.add_proposal(args["parent_path"], args["node_id"],
-                                 args.get("label"), args["rationale"],
-                                 args.get("sample_docs", []))
+        pid = store.add_proposal(Proposal(
+            id=0, status="pending", parent_path=args["parent_path"],
+            node_id=args["node_id"], label=args.get("label") or "",
+            rationale=args["rationale"],
+            sample_docs=args.get("sample_docs", [])))
         return {"proposal_id": pid}
     if name == "finish":
         return {"done": args.get("summary", "")}
@@ -132,7 +134,7 @@ async def _tag_check(store, client, sem, args, docs_by_id):
     return {k: v.get("p") for k, v in res["answers"].items()}
 
 
-async def agent(store: DocStore, tax: Taxonomy, *, turns: int = 30,
+async def agent(store: Store, tax: Taxonomy, *, turns: int = 30,
                 run_dir: str = "tmp/agent_runs") -> dict[str, Any]:
     """One scoped curation session. Returns transcript + write stats."""
     Path(run_dir).mkdir(parents=True, exist_ok=True)

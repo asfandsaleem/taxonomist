@@ -10,7 +10,7 @@
   taxonomist restore <snapshot_id>
 
 Data model: docs carry meta.l1/meta.l2/meta.l3 tags (levels). The store
-defaults to ./taxonomy.db (sqlite); implement DocStore for your own schema.
+defaults to ./taxonomy.db (sqlite); implement Store for your own schema.
 """
 from __future__ import annotations
 
@@ -19,7 +19,8 @@ import asyncio
 import json
 import sys
 
-from .store import Doc, SqliteStore
+from .adapters import SqliteStore
+from .model import Doc
 from .taxonomy import Taxonomy
 
 
@@ -109,8 +110,8 @@ def main(argv=None) -> int:
     elif args.cmd == "proposals":
         if args.action == "list":
             for pr_ in store.proposals("pending"):
-                print(f"#{pr_['id']} {pr_['node_id']} -> {pr_['parent_path']}"
-                      f"  {pr_['rationale'][:60]}")
+                print(f"#{pr_.id} {pr_.node_id} -> {pr_.parent_path}"
+                      f"  {pr_.rationale[:60]}")
         elif args.action == "accept":
             store.set_proposal(args.id, "accepted")
             print("accepted", args.id)
