@@ -34,6 +34,7 @@ def main(argv=None) -> int:
     p.add_argument("--taxonomy", default="taxonomy.json")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    sub.add_parser("init")
     sub.add_parser("ingest").add_argument("file")
     sub.add_parser("tree")
     sub.add_parser("coverage")
@@ -66,7 +67,23 @@ def main(argv=None) -> int:
     args = p.parse_args(argv)
     store = SqliteStore(args.db)
 
-    if args.cmd == "ingest":
+    if args.cmd == "init":
+        from pathlib import Path
+        if not Path(args.taxonomy).exists():
+            Taxonomy(l1={"general": "General"},
+                     l1_to_l2={"general": ["misc"]},
+                     l2={"misc": "Miscellaneous"},
+                     l3={}).save(args.taxonomy)
+            print(f"wrote {args.taxonomy} (skeleton — edit or grow via proposals)")
+        if not Path(".env").exists():
+            Path(".env").write_text(
+                "OPENROUTER_API_KEY=\n"
+                "# TAXONOMIST_DECISION_MODEL=openai/gpt-6-luna-decisions\n"
+                "# TAXONOMIST_GEN_MODEL=z-ai/glm-5.3-flash\n")
+            print("wrote .env (add OPENROUTER_API_KEY)")
+        Path("tmp/agent_runs").mkdir(parents=True, exist_ok=True)
+        print("ready — taxonomist ingest <docs.jsonl>, then taxonomist tag")
+    elif args.cmd == "ingest":
         docs = [Doc(str(d.get("id")), d.get("title", ""), d.get("text", ""),
                     d.get("meta", {}))
                 for d in map(json.loads, open(args.file))]

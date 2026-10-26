@@ -1,7 +1,19 @@
-"""Env-driven configuration — no framework, no host config dependency."""
+"""Env-driven configuration — no framework, no host config dependency.
+
+A `.env` file in the working directory is honored (KEY=VALUE lines,
+# comments); real environment variables always win."""
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+_dotenv = Path(".env")
+if _dotenv.exists():
+    for line in _dotenv.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, _, v = line.partition("=")
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
 def _env(name: str, default: str) -> str:
